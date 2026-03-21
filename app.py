@@ -1,21 +1,8 @@
 """
-╔══════════════════════════════════════════════════════════════════╗
-║   app.py  —  SkinAI Flask Backend                                ║
-║   Works on Render FREE tier (no TensorFlow needed)               ║
-║   Supports: tflite-runtime → keras → demo mode (auto fallback)   ║
-╚══════════════════════════════════════════════════════════════════╝
-
-HOW TO RUN LOCALLY:
-    python app.py
-    then open http://127.0.0.1:5000
-
-HOW IT WORKS ON RENDER:
-    - If model/skin_nail_model.tflite exists  uses TFLite (best)
-    - If model/skin_nail_model.h5 exists      uses Keras
-    - If neither exists                        Demo mode (random results)
+app.py - SkinAI Flask Backend
+Safe version for Render free tier - no TensorFlow required
 """
 
-# == Standard library imports ==================================================
 import os
 import json
 import uuid
@@ -23,269 +10,266 @@ import hashlib
 import random
 from datetime import datetime
 
-# == Flask imports ==============================================================
 from flask import (
     Flask, render_template, request,
     redirect, url_for, session, jsonify
 )
 from werkzeug.utils import secure_filename
 
-# == Image processing (always available) =======================================
+# ── numpy and Pillow (always available) ───────────────────────────────────────
 import numpy as np
 from PIL import Image as PILImage
 
 # ==============================================================================
-#  STEP 1 — Try loading ML libraries (graceful fallback if not installed)
+#  MODEL LOADING — tries 3 methods, never crashes
 # ==============================================================================
 
-model   = None     # will hold the loaded model object
-TF_MODE = "demo"   # "tflite" | "keras" | "demo"
+model   = None
+TF_MODE = "demo"
 
-# -- Try TFLite first (lightest, works on Render free tier) --------------------
+# Try 1: TFLite (best for Render)
 try:
     import tflite_runtime.interpreter as tflite
-    TFLITE_PATH = os.path.join("model", "skin_nail_model.tflite")
-    if os.path.exists(TFLITE_PATH):
-        model = tflite.Interpreter(model_path=TFLITE_PATH)
+    _path = os.path.join("model", "skin_nail_model.tflite")
+    if os.path.exists(_path):
+        model   = tflite.Interpreter(model_path=_path)
         model.allocate_tensors()
         TF_MODE = "tflite"
-        print("TFLite model loaded successfully!")
-    else:
-        print("tflite-runtime installed but .tflite model not found")
-except Exception as e:
-    print(f"tflite-runtime not available: {e}")
+        print("OK: TFLite model loaded")
+except Exception:
+    pass
 
-# -- Try full Keras/TensorFlow next (works locally) ----------------------------
+# Try 2: Keras / TensorFlow (works locally)
 if model is None:
     try:
-        from tensorflow.keras.models import load_model
-        from tensorflow.keras.preprocessing import image as keras_image
-        KERAS_PATH = os.path.join("model", "skin_nail_model.h5")
-        if os.path.exists(KERAS_PATH):
-            model   = load_model(KERAS_PATH)
+        from tensorflow.keras.models import load_model as keras_load
+        _path = os.path.join("model", "skin_nail_model.h5")
+        if os.path.exists(_path):
+            model   = keras_load(_path)
             TF_MODE = "keras"
-            print("Keras (.h5) model loaded successfully!")
-        else:
-            print("TensorFlow installed but model/skin_nail_model.h5 not found")
-    except Exception as e:
-        print(f"TensorFlow not available: {e}")
+            print("OK: Keras model loaded")
+    except Exception:
+        pass
 
-# -- Final status --------------------------------------------------------------
-if TF_MODE == "demo":
-    print("Running in DEMO mode — predictions are random")
-    print("Train model locally and upload .tflite for real predictions")
+# Try 3: Demo mode fallback
+if model is None:
+    TF_MODE = "demo"
+    print("INFO: No model found - running in demo mode")
 
 # ==============================================================================
-#  STEP 2 — Flask app setup
+#  FLASK APP
 # ==============================================================================
 
 app = Flask(__name__)
-
-# Secret key reads from Render environment variable, falls back to local key
-app.secret_key = os.environ.get("SECRET_KEY", "skinai_local_dev_key_2024")
+app.secret_key = os.environ.get("SECRET_KEY", "skinai_secret_2024_local")
 
 # ==============================================================================
-#  STEP 3 — Configuration
+#  CONFIG
 # ==============================================================================
 
 UPLOAD_FOLDER      = os.path.join("static", "uploads")
 DISEASE_INFO_PATH  = "disease_info.json"
 USERS_DB_PATH      = "users.json"
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
-IMG_SIZE           = 224  # MobileNetV2 input size
+IMG_SIZE           = 224
+CLASS_NAMES        = ["acne", "eczema", "nail_fungus", "psoriasis"]
 
-# Disease class names — must match training order (alphabetical = Keras default)
-CLASS_NAMES = ["acne", "eczema", "nail_fungus", "psoriasis"]
-
-# Create required folders if they do not exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs("model", exist_ok=True)
 
-# Max upload size: 10 MB
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 # ==============================================================================
-#  STEP 4 — Load disease info database
+#  DISEASE INFO — built-in fallback so app works even without disease_info.json
 # ==============================================================================
 
+BUILTIN_DISEASE_INFO = {
+    "acne": {
+        "duration": "Mild acne resolves in 2 to 6 weeks. Severe acne may persist for months.",
+        "precautions": [
+            "Wash your face twice daily with a gentle cleanser",
+            "Avoid touching or picking at pimples",
+            "Use oil-free, non-comedogenic moisturizers",
+            "Change pillowcases every 2 to 3 days"
+        ],
+        "tips": [
+            "Apply benzoyl peroxide or salicylic acid as spot treatment",
+            "Consult a dermatologist if acne is severe or leaving scars"
+        ]
+    },
+    "eczema": {
+        "duration": "Eczema is chronic. Flare-ups can last days to weeks.",
+        "precautions": [
+            "Moisturize skin at least twice daily",
+            "Use fragrance-free soaps and detergents",
+            "Wear loose breathable cotton clothing",
+            "Keep nails short to prevent scratching damage"
+        ],
+        "tips": [
+            "Over-the-counter hydrocortisone cream relieves mild flares",
+            "Cold compresses can soothe itching temporarily"
+        ]
+    },
+    "psoriasis": {
+        "duration": "Psoriasis is chronic with flare-ups lasting weeks to months.",
+        "precautions": [
+            "Moisturize daily to reduce scaling and dryness",
+            "Avoid triggers like stress, smoking, and alcohol",
+            "Protect skin from cuts and sunburn",
+            "Bathe in lukewarm water and pat skin dry gently"
+        ],
+        "tips": [
+            "Short controlled sun exposure may reduce plaques",
+            "Consult a dermatologist for prescription treatments"
+        ]
+    },
+    "nail_fungus": {
+        "duration": "Nail fungus takes 6 to 18 months for full recovery even with treatment.",
+        "precautions": [
+            "Keep nails short, dry, and clean",
+            "Wear moisture-wicking socks and change them daily",
+            "Never walk barefoot in public pools or gyms",
+            "Do not share nail clippers or footwear"
+        ],
+        "tips": [
+            "Antifungal nail lacquer works for mild infections",
+            "See a doctor for oral antifungal medication for severe cases"
+        ]
+    }
+}
+
+# Load from file if available, otherwise use built-in
 try:
     with open(DISEASE_INFO_PATH, "r", encoding="utf-8") as f:
         DISEASE_INFO = json.load(f)
-    print(f"Disease database loaded ({len(DISEASE_INFO)} diseases)")
-except FileNotFoundError:
-    print("disease_info.json not found — using empty database")
-    DISEASE_INFO = {}
+    print(f"OK: disease_info.json loaded ({len(DISEASE_INFO)} diseases)")
+except Exception:
+    DISEASE_INFO = BUILTIN_DISEASE_INFO
+    print("INFO: Using built-in disease database")
 
 # ==============================================================================
-#  STEP 5 — Helper functions
+#  HELPER FUNCTIONS
 # ==============================================================================
 
 def allowed_file(filename):
-    """Check if uploaded file has an allowed image extension."""
-    return (
-        "." in filename and
-        filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-    )
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def hash_password(password):
-    """Hash password using SHA-256."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 def load_users():
-    """Load all users from users.json file."""
-    if os.path.exists(USERS_DB_PATH):
-        with open(USERS_DB_PATH, "r") as f:
-            return json.load(f)
+    try:
+        if os.path.exists(USERS_DB_PATH):
+            with open(USERS_DB_PATH, "r") as f:
+                content = f.read().strip()
+                if content:
+                    return json.loads(content)
+    except Exception:
+        pass
     return {}
 
 def save_users(users):
-    """Save all users to users.json file."""
-    with open(USERS_DB_PATH, "w") as f:
-        json.dump(users, f, indent=2)
+    try:
+        with open(USERS_DB_PATH, "w") as f:
+            json.dump(users, f, indent=2)
+    except Exception as e:
+        print(f"Could not save users: {e}")
 
-def preprocess_image_pil(img_path):
-    """
-    Load and preprocess image using Pillow only (no TensorFlow needed).
-    Returns numpy array of shape (1, 224, 224, 3) normalized to [0, 1].
-    """
-    img = PILImage.open(img_path).convert("RGB")   # ensure 3 channels (no alpha)
-    img = img.resize((IMG_SIZE, IMG_SIZE))           # resize to 224x224
-    arr = np.array(img, dtype=np.float32)            # convert to numpy float array
-    arr = arr / 255.0                                 # normalize pixels to [0, 1]
-    arr = np.expand_dims(arr, axis=0)                 # add batch dim: (1, 224, 224, 3)
+def preprocess_image(img_path):
+    img = PILImage.open(img_path).convert("RGB")
+    img = img.resize((IMG_SIZE, IMG_SIZE))
+    arr = np.array(img, dtype=np.float32) / 255.0
+    arr = np.expand_dims(arr, axis=0)
     return arr
 
-# ==============================================================================
-#  STEP 6 — Prediction function (handles all 3 modes automatically)
-# ==============================================================================
-
 def run_prediction(filepath):
-    """
-    Run AI prediction on the image at filepath.
-    Returns: (predicted_class_name, confidence_percentage)
+    """Run prediction - auto selects best available method."""
 
-    Automatically picks the best available method:
-      tflite -> keras -> demo (random)
-    """
-
-    # -- DEMO MODE: no model available -----------------------------------------
+    # Demo mode
     if TF_MODE == "demo" or model is None:
-        predicted_class = random.choice(CLASS_NAMES)
-        confidence      = round(random.uniform(72.0, 96.0), 1)
-        return predicted_class, confidence
+        return random.choice(CLASS_NAMES), round(random.uniform(72.0, 96.0), 1)
 
-    # -- TFLITE MODE: lightweight, perfect for Render --------------------------
+    arr = preprocess_image(filepath)
+
+    # TFLite prediction
     if TF_MODE == "tflite":
-        arr = preprocess_image_pil(filepath)
+        inp = model.get_input_details()
+        out = model.get_output_details()
+        model.set_tensor(inp[0]["index"], arr)
+        model.invoke()
+        preds      = model.get_tensor(out[0]["index"])[0]
+        idx        = int(np.argmax(preds))
+        confidence = round(float(preds[idx]) * 100, 1)
+        return CLASS_NAMES[idx], confidence
 
-        # Get model input and output tensor info
-        input_details  = model.get_input_details()
-        output_details = model.get_output_details()
-
-        # Feed the image into the model
-        model.set_tensor(input_details[0]["index"], arr)
-        model.invoke()  # run the inference
-
-        # Read output predictions — shape: (1, 4) for 4 classes
-        predictions     = model.get_tensor(output_details[0]["index"])[0]
-        predicted_idx   = int(np.argmax(predictions))        # index of highest score
-        predicted_class = CLASS_NAMES[predicted_idx]
-        confidence      = round(float(predictions[predicted_idx]) * 100, 1)
-        return predicted_class, confidence
-
-    # -- KERAS MODE: full TensorFlow, works on local machine -------------------
+    # Keras prediction
     if TF_MODE == "keras":
-        arr             = preprocess_image_pil(filepath)
-        predictions     = model.predict(arr)[0]              # shape: (4,)
-        predicted_idx   = int(np.argmax(predictions))
-        predicted_class = CLASS_NAMES[predicted_idx]
-        confidence      = round(float(predictions[predicted_idx]) * 100, 1)
-        return predicted_class, confidence
+        preds      = model.predict(arr)[0]
+        idx        = int(np.argmax(preds))
+        confidence = round(float(preds[idx]) * 100, 1)
+        return CLASS_NAMES[idx], confidence
 
-    # Fallback safety net
     return random.choice(CLASS_NAMES), round(random.uniform(72.0, 96.0), 1)
 
 # ==============================================================================
-#  ROUTES — Authentication
+#  ROUTES — Auth
 # ==============================================================================
 
 @app.route("/")
 def index():
-    """Root URL — redirect to home if logged in, else to login page."""
     if "username" in session:
         return redirect(url_for("home"))
     return redirect(url_for("login"))
 
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """
-    GET  /login  — shows the login page
-    POST /login  — receives JSON {username, password}, returns JSON response
-    """
     if request.method == "POST":
-        data     = request.get_json()
-        username = data.get("username", "").strip().lower()
-        password = data.get("password", "")
-
-        users = load_users()
-
-        if username in users and users[username]["password"] == hash_password(password):
-            session["username"] = username
-            session["name"]     = users[username].get("name", username)
-            return jsonify({"success": True})
-
-        return jsonify({"success": False, "message": "Invalid username or password."})
-
+        try:
+            data     = request.get_json()
+            username = data.get("username", "").strip().lower()
+            password = data.get("password", "")
+            users    = load_users()
+            if username in users and users[username]["password"] == hash_password(password):
+                session["username"] = username
+                session["name"]     = users[username].get("name", username)
+                return jsonify({"success": True})
+            return jsonify({"success": False, "message": "Invalid username or password."})
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)})
     return render_template("login.html")
-
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
-    """
-    GET  /signup — shows the signup page
-    POST /signup — receives JSON {name, username, password}, creates account
-    """
     if request.method == "POST":
-        data     = request.get_json()
-        username = data.get("username", "").strip().lower()
-        password = data.get("password", "")
-        name     = data.get("name", "").strip()
-
-        # Validate inputs
-        if not username or not password or not name:
-            return jsonify({"success": False, "message": "All fields are required."})
-
-        if len(password) < 6:
-            return jsonify({"success": False, "message": "Password must be at least 6 characters."})
-
-        users = load_users()
-
-        if username in users:
-            return jsonify({"success": False, "message": "Username already taken."})
-
-        # Create new user record
-        users[username] = {
-            "name":     name,
-            "password": hash_password(password),
-            "joined":   datetime.now().isoformat()
-        }
-        save_users(users)
-
-        # Auto login after signup
-        session["username"] = username
-        session["name"]     = name
-        return jsonify({"success": True})
-
+        try:
+            data     = request.get_json()
+            username = data.get("username", "").strip().lower()
+            password = data.get("password", "")
+            name     = data.get("name", "").strip()
+            if not username or not password or not name:
+                return jsonify({"success": False, "message": "All fields are required."})
+            if len(password) < 6:
+                return jsonify({"success": False, "message": "Password must be at least 6 characters."})
+            users = load_users()
+            if username in users:
+                return jsonify({"success": False, "message": "Username already taken."})
+            users[username] = {
+                "name":     name,
+                "password": hash_password(password),
+                "joined":   datetime.now().isoformat()
+            }
+            save_users(users)
+            session["username"] = username
+            session["name"]     = name
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)})
     return render_template("signup.html")
-
 
 @app.route("/logout")
 def logout():
-    """Clear the session and redirect to login page."""
     session.clear()
     return redirect(url_for("login"))
-
 
 # ==============================================================================
 #  ROUTES — Main App
@@ -293,120 +277,89 @@ def logout():
 
 @app.route("/home")
 def home():
-    """Main prediction page — user must be logged in."""
     if "username" not in session:
         return redirect(url_for("login"))
     return render_template("index.html", username=session.get("name", "User"))
 
-
 # ==============================================================================
-#  ROUTES — AI Prediction API
+#  ROUTES — Prediction API
 # ==============================================================================
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """
-    POST /predict
-
-    Accepts : multipart/form-data  with key 'file' containing an image
-    Returns : JSON response with these fields:
-        {
-            "disease":     "Acne",
-            "confidence":  87.4,
-            "duration":    "2-6 weeks...",
-            "precautions": ["wash face twice daily", ...],
-            "tips":        ["use benzoyl peroxide", ...],
-            "image_url":   "/static/uploads/abc123.jpg",
-            "mode":        "tflite"  (or "keras" or "demo")
-        }
-    """
-
-    # User must be logged in
     if "username" not in session:
-        return jsonify({"error": "Unauthorized. Please log in first."}), 401
-
-    # Must have a file in the request
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
     if "file" not in request.files:
         return jsonify({"error": "No image file received."}), 400
-
     file = request.files["file"]
-
     if file.filename == "":
         return jsonify({"error": "No file selected."}), 400
-
     if not allowed_file(file.filename):
-        return jsonify({"error": "Unsupported file type. Use JPG, PNG, or WEBP."}), 400
+        return jsonify({"error": "Use JPG, PNG, or WEBP images only."}), 400
 
-    # -- Save the uploaded image -----------------------------------------------
     ext      = file.filename.rsplit(".", 1)[1].lower()
-    filename = f"{uuid.uuid4().hex}.{ext}"          # unique random filename
+    filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
-    # -- Run AI prediction -----------------------------------------------------
     try:
         predicted_class, confidence = run_prediction(filepath)
     except Exception as e:
-        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
+        return jsonify({"error": f"Prediction error: {str(e)}"}), 500
 
-    # -- Look up disease information -------------------------------------------
     info = DISEASE_INFO.get(predicted_class, {})
 
-    # -- Return the result as JSON ---------------------------------------------
     return jsonify({
         "disease":     predicted_class.replace("_", " ").title(),
         "confidence":  confidence,
-        "duration":    info.get("duration",    "Consult a dermatologist for accurate timeline."),
-        "precautions": info.get("precautions", ["Consult a qualified dermatologist."]),
-        "tips":        info.get("tips",        ["Maintain proper skin hygiene."]),
+        "duration":    info.get("duration",    "Consult a dermatologist."),
+        "precautions": info.get("precautions", ["Keep the area clean and dry."]),
+        "tips":        info.get("tips",        ["See a dermatologist for diagnosis."]),
         "image_url":   f"/static/uploads/{filename}",
         "mode":        TF_MODE
     })
 
-
 # ==============================================================================
-#  ROUTES — Translations API
+#  ROUTES — Translations
 # ==============================================================================
 
 @app.route("/translations/<lang>")
 def get_translation(lang):
-    """
-    Serve translation JSON files for multi-language support.
-
-    GET /translations/en  returns English strings
-    GET /translations/hi  returns Hindi strings
-    GET /translations/te  returns Telugu strings
-    """
-    allowed_langs = ["en", "hi", "te"]
-    if lang not in allowed_langs:
-        lang = "en"   # default to English
-
+    if lang not in ["en", "hi", "te"]:
+        lang = "en"
     path = os.path.join("translations", f"{lang}.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
             return jsonify(json.load(f))
-    except FileNotFoundError:
-        return jsonify({"error": f"Translation file {lang}.json not found"}), 404
-    @app.errorhandler(500)
-def internal_error(error):
-    import traceback
-    return f"""
-    <h2>Debug Info (remove before final submission)</h2>
-    <pre>{traceback.format_exc()}</pre>
-    <p>TF_MODE: {TF_MODE}</p>
-    <p>Files present: {os.listdir('.')}</p>
-    <p>Templates: {os.listdir('templates') if os.path.exists('templates') else 'MISSING'}</p>
-    """, 500
-
+    except Exception:
+        return jsonify({}), 200   # return empty object instead of 404
 
 # ==============================================================================
-#  START THE SERVER
+#  ERROR HANDLERS — show helpful debug info instead of blank page
+# ==============================================================================
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Page not found", "url": request.url}), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    print("500 ERROR:\n", tb)
+    # In production hide traceback — show generic message
+    if app.debug:
+        return f"<pre>500 Error:\n{tb}</pre>", 500
+    return "Internal server error. Check Render logs for details.", 500
+
+# ==============================================================================
+#  START SERVER
 # ==============================================================================
 
 if __name__ == "__main__":
-    print("\n" + "=" * 55)
-    print("  SkinAI: Skin and Nail Disease Detector")
+    print("\n" + "="*50)
+    print("  SkinAI - Skin & Nail Disease Detector")
     print(f"  Model mode : {TF_MODE.upper()}")
     print("  URL        : http://127.0.0.1:5000")
-    print("=" * 55 + "\n")
+    print("="*50 + "\n")
     app.run(debug=True, host="0.0.0.0", port=5000)
