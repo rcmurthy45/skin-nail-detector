@@ -26,7 +26,7 @@ except ImportError:
 
 # ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = "myStrongSecret_2024_SkinAI_xZ9q"  # Change in production!
+app.secret_key = os.environ.get("SECRET_KEY", "fallback_dev_key_2024") # Change in production!
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 UPLOAD_FOLDER   = "static/uploads"
