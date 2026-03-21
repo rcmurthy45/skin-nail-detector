@@ -14,15 +14,32 @@ import hashlib
 from datetime import datetime
 from werkzeug.utils import secure_filename
 
-# ── Try importing TensorFlow (optional if model not yet trained) ──────────────
+# ── REMOVE these old lines ──────────────────────────
+# import tensorflow as tf
+# from tensorflow.keras.models import load_model
+# from tensorflow.keras.preprocessing import image as keras_image
+
+# ── ADD these new lines instead ─────────────────────
+import numpy as np
+from PIL import Image
+
 try:
-    import numpy as np
-    from tensorflow.keras.models import load_model
-    from tensorflow.keras.preprocessing import image as keras_image
-    MODEL_AVAILABLE = True
+    import tflite_runtime.interpreter as tflite
+    TF_AVAILABLE = True
 except ImportError:
-    MODEL_AVAILABLE = False
-    print("⚠️  TensorFlow not installed. Run: pip install tensorflow")
+    TF_AVAILABLE = False
+    print("tflite-runtime not available — running demo mode")
+
+# ── Load TFLite model ────────────────────────────────
+interpreter = None
+MODEL_PATH  = "model/skin_nail_model.tflite"
+
+if TF_AVAILABLE and os.path.exists(MODEL_PATH):
+    interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+    interpreter.allocate_tensors()
+    print("✅ TFLite model loaded!")
+else:
+    print("⚠️  Model not found — running in demo mode")
 
 # ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -153,57 +170,53 @@ def home():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """
-    Accepts a multipart image upload, runs MobileNetV2, returns JSON:
-    {
-      "disease":     "Acne",
-      "confidence":  87.4,
-      "duration":    "...",
-      "precautions": ["...", "..."],
-      "tips":        ["...", "..."]
-    }
-    """
     if "username" not in session:
-        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        return jsonify({"error": "Unauthorized"}), 401
 
     if "file" not in request.files:
-        return jsonify({"error": "No image file received."}), 400
+        return jsonify({"error": "No file received"}), 400
 
     file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "No file selected."}), 400
-
     if not allowed_file(file.filename):
-        return jsonify({"error": "Unsupported file type. Use JPG, PNG, GIF, or WEBP."}), 400
+        return jsonify({"error": "Unsupported file type"}), 400
 
-    # ── Save uploaded file ────────────────────────────────────────────────
+    # Save uploaded file
     ext      = file.filename.rsplit(".", 1)[1].lower()
     filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     file.save(filepath)
 
-    # ── Predict ───────────────────────────────────────────────────────────
-    if model is None or not MODEL_AVAILABLE:
-        # ── DEMO MODE (no trained model) ──────────────────────────────────
+    # ── Predict using TFLite ──────────────────────────
+    if interpreter is None:
+        # Demo mode — random prediction
         import random
         predicted_class = random.choice(CLASS_NAMES)
         confidence      = round(random.uniform(70, 97), 1)
     else:
-        img_array       = preprocess_image(filepath)
-        predictions     = model.predict(img_array)[0]      # shape: (4,)
+        # Real prediction
+        img = Image.open(filepath).resize((224, 224))
+        arr = np.array(img, dtype=np.float32) / 255.0
+        arr = np.expand_dims(arr, axis=0)
+
+        input_details  = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+
+        interpreter.set_tensor(input_details[0]['index'], arr)
+        interpreter.invoke()
+
+        predictions     = interpreter.get_tensor(output_details[0]['index'])[0]
         predicted_idx   = int(np.argmax(predictions))
         predicted_class = CLASS_NAMES[predicted_idx]
         confidence      = round(float(predictions[predicted_idx]) * 100, 1)
 
-    # ── Fetch disease metadata ────────────────────────────────────────────
     info = disease_db.get(predicted_class, {})
 
     return jsonify({
         "disease":     predicted_class.replace("_", " ").title(),
         "confidence":  confidence,
-        "duration":    info.get("duration",    "Consult a dermatologist."),
+        "duration":    info.get("duration", "Consult a dermatologist."),
         "precautions": info.get("precautions", []),
-        "tips":        info.get("tips",        []),
+        "tips":        info.get("tips", []),
         "image_url":   f"/static/uploads/{filename}"
     })
 
