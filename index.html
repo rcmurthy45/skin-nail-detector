@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkinAI — Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ══════════════════════════════════════════════════════════
+       VARIABLES & RESET
+    ══════════════════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0a0c12;
+      --surface:   #12151f;
+      --panel:     #1a1e2e;
+      --border:    #252a3d;
+      --accent:    #7c6af7;
+      --accent2:   #4fc3f7;
+      --accent3:   #f48fb1;
+      --text:      #e8eaf0;
+      --muted:     #6b7194;
+      --success:   #4caf80;
+      --warn:      #ffa726;
+      --error:     #ef5350;
+      --radius:    16px;
+      --r-lg:      24px;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       NAVBAR
+    ══════════════════════════════════════════════════════════ */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,12,18,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'DM Serif Display', serif;
+      font-size: 20px;
+    }
+    .nav-logo .icon {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .nav-logo span { color: var(--accent); }
+
+    .nav-right { display: flex; align-items: center; gap: 16px; }
+    .welcome-text { font-size: 14px; color: var(--muted); }
+    .welcome-text strong { color: var(--text); }
+
+    /* Language selector */
+    .lang-select {
+      background: var(--panel); border: 1px solid var(--border);
+      color: var(--text); border-radius: 10px;
+      padding: 8px 12px; font-size: 13px; font-family: inherit;
+      cursor: pointer; outline: none;
+      transition: border-color 0.2s;
+    }
+    .lang-select:focus { border-color: var(--accent); }
+
+    .btn-logout {
+      background: rgba(239,83,80,0.12); border: 1px solid rgba(239,83,80,0.25);
+      color: #ef5350; border-radius: 10px; padding: 8px 16px;
+      font-size: 13px; font-family: inherit; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-logout:hover { background: rgba(239,83,80,0.22); }
+
+    /* ══════════════════════════════════════════════════════════
+       LAYOUT
+    ══════════════════════════════════════════════════════════ */
+    main {
+      max-width: 1000px;
+      margin: 48px auto;
+      padding: 0 24px;
+    }
+
+    .page-header { text-align: center; margin-bottom: 48px; }
+    .page-header h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(28px, 5vw, 42px);
+      line-height: 1.2;
+      margin-bottom: 12px;
+    }
+    .page-header h1 em { color: var(--accent); font-style: italic; }
+    .page-header p { color: var(--muted); font-size: 16px; max-width: 480px; margin: 0 auto; }
+
+    /* ── Two-column grid ──────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+
+    /* ══════════════════════════════════════════════════════════
+       UPLOAD CARD
+    ══════════════════════════════════════════════════════════ */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 28px;
+    }
+    .card-title {
+      font-size: 13px; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* Drop Zone */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.25s, background 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+    .drop-zone:hover,
+    .drop-zone.dragover { border-color: var(--accent); background: rgba(124,106,247,0.06); }
+
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+    .drop-icon { font-size: 40px; margin-bottom: 12px; }
+    .drop-label { font-size: 15px; font-weight: 500; margin-bottom: 6px; }
+    .drop-hint  { font-size: 13px; color: var(--muted); }
+
+    /* Preview */
+    #previewContainer {
+      margin-top: 20px; display: none; position: relative;
+    }
+    #previewImg {
+      width: 100%; border-radius: var(--radius);
+      object-fit: cover; max-height: 220px;
+      border: 1px solid var(--border);
+    }
+    .preview-badge {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+      border-radius: 8px; padding: 4px 10px; font-size: 12px;
+      color: var(--success);
+    }
+
+    /* Voice input area */
+    .voice-row {
+      margin-top: 18px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .btn-mic {
+      flex-shrink: 0;
+      width: 46px; height: 46px; border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 20px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    }
+    .btn-mic:hover      { background: var(--panel); border-color: var(--accent); }
+    .btn-mic.listening  { background: rgba(239,83,80,0.15); border-color: var(--error); animation: pulse 1s infinite; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(239,83,80,0.1); } }
+
+    .voice-input {
+      flex: 1; padding: 12px 14px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text); font-size: 14px; font-family: inherit;
+      outline: none; transition: border-color 0.2s;
+    }
+    .voice-input:focus { border-color: var(--accent); }
+
+    /* Predict button */
+    .btn-predict {
+      width: 100%; margin-top: 20px;
+      padding: 16px; border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--accent), #9b8df9);
+      border: none; color: #fff;
+      font-size: 16px; font-weight: 600; font-family: inherit;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .btn-predict:hover   { opacity: 0.9; transform: translateY(-1px); }
+    .btn-predict:active  { transform: translateY(0); }
+    .btn-predict:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    /* ══════════════════════════════════════════════════════════
+       RESULTS CARD
+    ══════════════════════════════════════════════════════════ */
+    .result-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 28px;
+      display: flex; flex-direction: column; gap: 0;
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center; padding: 32px 0;
+      color: var(--muted);
+      gap: 12px;
+    }
+    .empty-state .icon { font-size: 48px; opacity: 0.4; }
+    .empty-state p { font-size: 14px; max-width: 200px; line-height: 1.6; }
+
+    /* Loader */
+    .loader { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 40px 0; }
+    .loader.show { display: flex; }
+    .scan-ring {
+      width: 64px; height: 64px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-right-color: var(--accent2);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text { color: var(--muted); font-size: 14px; }
+    .dot-anim::after { content: ''; animation: dots 1.4s infinite; }
+    @keyframes dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} 100%{content:'.'} }
+
+    /* Result content */
+    .result-content { display: none; }
+    .result-content.show { display: block; animation: fadeIn 0.5s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    .disease-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg, rgba(124,106,247,0.2), rgba(79,195,247,0.1));
+      border: 1px solid rgba(124,106,247,0.35);
+      border-radius: 12px; padding: 10px 16px;
+      margin-bottom: 18px;
+    }
+    .disease-name {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px; color: var(--text);
+    }
+
+    /* Confidence bar */
+    .conf-row { margin-bottom: 20px; }
+    .conf-label {
+      display: flex; justify-content: space-between;
+      font-size: 13px; color: var(--muted); margin-bottom: 8px;
+    }
+    .conf-label strong { color: var(--text); font-size: 15px; }
+    .conf-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .conf-fill {
+      height: 100%; border-radius: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 1s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /* Info sections */
+    .info-section { margin-bottom: 18px; }
+    .info-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+    }
+    .info-label::before { content: ''; width: 3px; height: 12px; border-radius: 2px; background: var(--accent); display: inline-block; }
+    .info-text { font-size: 14px; color: var(--text); line-height: 1.65; }
+
+    .tag-list { display: flex; flex-direction: column; gap: 6px; }
+    .tag-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px;
+      font-size: 13px; line-height: 1.5;
+    }
+    .tag-item .bullet { color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+
+    /* Disclaimer */
+    .disclaimer {
+      margin-top: 20px; padding: 12px 14px;
+      background: rgba(255,167,38,0.1); border: 1px solid rgba(255,167,38,0.25);
+      border-radius: 10px; font-size: 12px; color: var(--warn); line-height: 1.5;
+    }
+
+    /* Try Again button */
+    .btn-reset {
+      width: 100%; margin-top: 16px; padding: 12px;
+      border-radius: var(--radius);
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); font-size: 14px; font-family: inherit;
+      cursor: pointer; transition: background 0.2s, color 0.2s;
+    }
+    .btn-reset:hover { background: var(--surface); color: var(--text); }
+
+    /* ── Scrollbar ──────────────────────────────────────────── */
+    .scroll-box { overflow-y: auto; max-height: 520px; padding-right: 4px; }
+    .scroll-box::-webkit-scrollbar { width: 4px; }
+    .scroll-box::-webkit-scrollbar-track { background: transparent; }
+    .scroll-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAVBAR ──────────────────────────────────────────────────────────── -->
+  <nav>
+    <div class="nav-logo">
+      <div class="icon">🔬</div>
+      Skin<span>AI</span>
+    </div>
+    <div class="nav-right">
+      <span class="welcome-text">Hello, <strong>{{ username }}</strong></span>
+
+      <select class="lang-select" id="langSelect" onchange="changeLanguage(this.value)">
+        <option value="en">🇬🇧 English</option>
+        <option value="hi">🇮🇳 हिन्दी</option>
+        <option value="te">🇮🇳 తెలుగు</option>
+      </select>
+
+      <a href="/logout" class="btn-logout" id="logoutBtn">Logout</a>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ───────────────────────────────────────────────────────────── -->
+  <main>
+    <!-- Header -->
+    <div class="page-header">
+      <h1>Skin & Nail <em>Disease</em> Detection</h1>
+      <p id="lblSubtitle">Upload a clear image of the affected area for AI-powered analysis</p>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid">
+
+      <!-- ── LEFT: Upload Card ────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title" id="lblUploadTitle">Upload Image</div>
+
+        <div class="drop-zone" id="dropZone"
+             ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+          <input type="file" id="fileInput" accept="image/*" onchange="onFileSelect(this)">
+          <div class="drop-icon">🖼️</div>
+          <div class="drop-label" id="lblUploadLabel">Upload Skin / Nail Image</div>
+          <div class="drop-hint"  id="lblUploadHint">Drag & drop or click to browse</div>
+        </div>
+
+        <!-- Image preview -->
+        <div id="previewContainer">
+          <img id="previewImg" src="" alt="Preview">
+          <div class="preview-badge">✓ Ready</div>
+        </div>
+
+        <!-- Voice input row -->
+        <div class="voice-row">
+          <button class="btn-mic" id="micBtn" onclick="toggleMic()" title="Click to speak symptoms">🎤</button>
+          <input  class="voice-input" id="voiceInput" type="text" placeholder="Describe your symptoms (optional)…">
+        </div>
+
+        <!-- Predict button -->
+        <button class="btn-predict" id="predictBtn" onclick="predict()">
+          <span>🔍</span> <span id="lblPredictBtn">Analyse Image</span>
+        </button>
+      </div>
+
+      <!-- ── RIGHT: Results Card ──────────────────────────────────────── -->
+      <div class="result-card">
+        <div class="card-title" id="lblResultTitle">Detection Result</div>
+
+        <!-- Empty state -->
+        <div class="empty-state" id="emptyState">
+          <div class="icon">🧬</div>
+          <p>Upload an image and click Analyse to see the AI prediction here</p>
+        </div>
+
+        <!-- Loader -->
+        <div class="loader" id="loader">
+          <div class="scan-ring"></div>
+          <div class="loader-text"><span id="lblAnalyzing">Analysing</span><span class="dot-anim"></span></div>
+        </div>
+
+        <!-- Result content -->
+        <div class="result-content scroll-box" id="resultContent">
+          <div class="disease-badge">
+            <span>🔎</span>
+            <span class="disease-name" id="resDisease">—</span>
+          </div>
+
+          <div class="conf-row">
+            <div class="conf-label">
+              <span id="lblConfidence">Confidence</span>
+              <strong id="resConfidence">—</strong>
+            </div>
+            <div class="conf-bar"><div class="conf-fill" id="confBar" style="width:0%"></div></div>
+          </div>
+
+          <div class="info-section">
+            <div class="info-label" id="lblDuration">Estimated Duration</div>
+            <div class="info-text" id="resDuration">—</div>
+          </div>
+
+          <div class="info-section">
+            <div class="info-label" id="lblPrecautions">Precautions & Care</div>
+            <ul class="tag-list" id="resPrecautions"></ul>
+          </div>
+
+          <div class="info-section">
+            <div class="info-label" id="lblTips">Additional Tips</div>
+            <ul class="tag-list" id="resTips"></ul>
+          </div>
+
+          <div class="disclaimer" id="lblDisclaimer">
+            ⚠️ This tool is for educational purposes only and is NOT a medical diagnosis. Always consult a qualified dermatologist.
+          </div>
+
+          <button class="btn-reset" id="resetBtn" onclick="resetAll()">
+            🔄 <span id="lblTryAnother">Try Another Image</span>
+          </button>
+        </div>
+
+      </div>
+    </div><!-- /grid -->
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════════
+       JAVASCRIPT
+  ════════════════════════════════════════════════════════════ -->
+  <script>
+    // ── State ──────────────────────────────────────────────────────────────
+    let selectedFile = null;
+    let recognition  = null;       // Web Speech API instance
+    let listening    = false;
+    let translations = {};         // current language strings
+
+    // ── Load translations on page load ─────────────────────────────────────
+    async function changeLanguage(lang) {
+      try {
+        const res  = await fetch(`/translations/${lang}`);
+        const data = await res.json();
+        translations = data;
+        applyTranslations();
+        localStorage.setItem("skinai_lang", lang);
+      } catch (e) { console.warn("Translation load failed", e); }
+    }
+
+    function t(key) { return translations[key] || key; }
+
+    function applyTranslations() {
+      const ids = [
+        ["lblUploadLabel",  "uploadLabel"],
+        ["lblUploadHint",   "uploadHint"],
+        ["lblPredictBtn",   "predictBtn"],
+        ["lblAnalyzing",    "analyzing"],
+        ["lblResultTitle",  "resultTitle"],
+        ["lblConfidence",   "confidence"],
+        ["lblDuration",     "duration"],
+        ["lblPrecautions",  "precautions"],
+        ["lblTips",         "tips"],
+        ["lblDisclaimer",   "disclaimer"],
+        ["logoutBtn",       "logout"],
+        ["lblTryAnother",   "tryAnother"],
+      ];
+      ids.forEach(([elId, key]) => {
+        const el = document.getElementById(elId);
+        if (el && t(key) !== key) el.textContent = t(key);
+      });
+
+      const vi = document.getElementById("voiceInput");
+      if (vi && t("micHint") !== "micHint") vi.placeholder = t("micHint");
+    }
+
+    // ── Drag & drop ────────────────────────────────────────────────────────
+    function onDragOver(e)  { e.preventDefault(); document.getElementById("dropZone").classList.add("dragover"); }
+    function onDragLeave(e) { document.getElementById("dropZone").classList.remove("dragover"); }
+    function onDrop(e) {
+      e.preventDefault();
+      document.getElementById("dropZone").classList.remove("dragover");
+      const file = e.dataTransfer.files[0];
+      if (file) loadPreview(file);
+    }
+
+    function onFileSelect(input) {
+      if (input.files && input.files[0]) loadPreview(input.files[0]);
+    }
+
+    function loadPreview(file) {
+      selectedFile = file;
+      const reader = new FileReader();
+      reader.onload = e => {
+        document.getElementById("previewImg").src = e.target.result;
+        document.getElementById("previewContainer").style.display = "block";
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // ── Voice input (Web Speech API) ───────────────────────────────────────
+    function toggleMic() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Voice recognition is not supported in your browser. Try Chrome or Edge.");
+        return;
+      }
+
+      if (listening) {
+        recognition.stop();
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      const lang  = document.getElementById("langSelect").value;
+      recognition.lang       = lang === "hi" ? "hi-IN" : lang === "te" ? "te-IN" : "en-US";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        listening = true;
+        document.getElementById("micBtn").classList.add("listening");
+        document.getElementById("micBtn").textContent = "🔴";
+      };
+
+      recognition.onresult = e => {
+        const transcript = Array.from(e.results).map(r => r[0].transcript).join("");
+        document.getElementById("voiceInput").value = transcript;
+      };
+
+      recognition.onend = () => {
+        listening = false;
+        document.getElementById("micBtn").classList.remove("listening");
+        document.getElementById("micBtn").textContent = "🎤";
+      };
+
+      recognition.onerror = e => {
+        console.error("Speech error:", e.error);
+        recognition.stop();
+      };
+
+      recognition.start();
+    }
+
+    // ── Predict ────────────────────────────────────────────────────────────
+    async function predict() {
+      if (!selectedFile) {
+        showToast(t("errorNoFile") || "Please select an image first.", "error");
+        return;
+      }
+
+      // Show loader
+      document.getElementById("emptyState").style.display  = "none";
+      document.getElementById("resultContent").classList.remove("show");
+      document.getElementById("loader").classList.add("show");
+      document.getElementById("predictBtn").disabled = true;
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      try {
+        const res  = await fetch("/predict", { method: "POST", body: formData });
+        const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
+
+        // ── Display result ────────────────────────────────────────────────
+        document.getElementById("resDisease").textContent    = data.disease;
+        document.getElementById("resConfidence").textContent = `${data.confidence}%`;
+        document.getElementById("confBar").style.width       = `${data.confidence}%`;
+        document.getElementById("resDuration").textContent   = data.duration;
+
+        // Precautions list
+        const prec = document.getElementById("resPrecautions");
+        prec.innerHTML = "";
+        (data.precautions || []).forEach(p => {
+          prec.innerHTML += `<li class="tag-item"><span class="bullet">▸</span><span>${p}</span></li>`;
+        });
+
+        // Tips list
+        const tips = document.getElementById("resTips");
+        tips.innerHTML = "";
+        (data.tips || []).forEach(t_ => {
+          tips.innerHTML += `<li class="tag-item"><span class="bullet">💡</span><span>${t_}</span></li>`;
+        });
+
+        document.getElementById("loader").classList.remove("show");
+        document.getElementById("resultContent").classList.add("show");
+
+      } catch (err) {
+        document.getElementById("loader").classList.remove("show");
+        document.getElementById("emptyState").style.display = "flex";
+        showToast(err.message || t("errorGeneric"), "error");
+        console.error(err);
+      }
+
+      document.getElementById("predictBtn").disabled = false;
+    }
+
+    // ── Reset ──────────────────────────────────────────────────────────────
+    function resetAll() {
+      selectedFile = null;
+      document.getElementById("fileInput").value       = "";
+      document.getElementById("previewContainer").style.display = "none";
+      document.getElementById("voiceInput").value      = "";
+      document.getElementById("resultContent").classList.remove("show");
+      document.getElementById("emptyState").style.display = "flex";
+      document.getElementById("confBar").style.width   = "0%";
+    }
+
+    // ── Toast notification ─────────────────────────────────────────────────
+    function showToast(msg, type = "info") {
+      const toast = document.createElement("div");
+      toast.textContent = msg;
+      Object.assign(toast.style, {
+        position: "fixed", bottom: "24px", left: "50%",
+        transform: "translateX(-50%)", zIndex: 9999,
+        padding: "12px 22px", borderRadius: "12px",
+        fontSize: "14px", fontFamily: "DM Sans, sans-serif",
+        background: type === "error" ? "rgba(239,83,80,0.95)" : "rgba(76,175,128,0.95)",
+        color: "#fff", boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        animation: "fadeUp 0.3s ease"
+      });
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    (function init() {
+      const savedLang = localStorage.getItem("skinai_lang") || "en";
+      document.getElementById("langSelect").value = savedLang;
+      changeLanguage(savedLang);
+    })();
+  </script>
+</body>
+</html>

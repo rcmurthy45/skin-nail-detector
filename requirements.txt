@@ -1,0 +1,20 @@
+# ── Core Web Framework ────────────────────────────────────────────────────────
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# ── Deep Learning (TensorFlow + Keras) ───────────────────────────────────────
+tensorflow==2.15.0        # includes tf.keras
+numpy==1.26.3
+
+# ── Image processing ─────────────────────────────────────────────────────────
+Pillow==10.2.0
+
+# ── Visualization (for training graphs) ──────────────────────────────────────
+matplotlib==3.8.2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INSTALL:  pip install -r requirements.txt
+#
+# If you are on Apple Silicon (M1/M2):
+#   pip install tensorflow-macos tensorflow-metal
+# ─────────────────────────────────────────────────────────────────────────────

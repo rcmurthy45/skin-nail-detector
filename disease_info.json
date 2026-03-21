@@ -1,0 +1,58 @@
+{
+  "acne": {
+    "duration": "Mild acne: 1–2 weeks per breakout. Severe acne: 3–6 months with treatment.",
+    "precautions": [
+      "Wash face twice daily with a gentle, non-comedogenic cleanser",
+      "Avoid touching your face with unwashed hands",
+      "Do not pop or squeeze pimples",
+      "Use oil-free, non-comedogenic moisturizers and sunscreen",
+      "Change pillowcases every 2–3 days",
+      "Stay hydrated and maintain a balanced diet",
+      "Avoid heavy makeup or remove it before sleeping"
+    ],
+    "tips": "Apply benzoyl peroxide or salicylic acid products as spot treatments. Consult a dermatologist if over-the-counter treatments don't work within 6–8 weeks.",
+    "emoji": "🔴"
+  },
+  "eczema": {
+    "duration": "Chronic condition with flare-ups lasting days to weeks. With treatment, flares can be managed to 1–2 weeks.",
+    "precautions": [
+      "Moisturize skin at least twice daily with thick creams or ointments",
+      "Avoid known triggers such as certain soaps, fabrics, or allergens",
+      "Use mild, fragrance-free soaps and detergents",
+      "Wear loose-fitting, soft cotton clothing",
+      "Keep nails short to minimize skin damage from scratching",
+      "Maintain a cool, humid indoor environment",
+      "Avoid extreme temperatures and sudden temperature changes"
+    ],
+    "tips": "Apply moisturizer immediately after bathing while skin is still slightly damp. Topical corticosteroids prescribed by a doctor can reduce inflammation during flare-ups.",
+    "emoji": "🟠"
+  },
+  "psoriasis": {
+    "duration": "Chronic condition. Flares can last weeks to months. Remission periods vary — from weeks to years.",
+    "precautions": [
+      "Keep skin well-moisturized to prevent dryness and cracking",
+      "Avoid skin injuries, cuts, or infections (can trigger flares)",
+      "Limit alcohol consumption and avoid smoking",
+      "Manage stress through yoga, meditation, or regular exercise",
+      "Get moderate sun exposure (10–15 mins daily) but avoid sunburn",
+      "Use lukewarm (not hot) water for bathing",
+      "Inform your doctor about all medications you take"
+    ],
+    "tips": "Coal tar shampoos help scalp psoriasis. Phototherapy (light treatment) under medical supervision is effective for moderate to severe cases.",
+    "emoji": "🟡"
+  },
+  "nail_fungus": {
+    "duration": "3 to 12 months of treatment. Complete nail clearance may take 6–18 months as nails grow slowly.",
+    "precautions": [
+      "Keep nails short, dry, and clean",
+      "Wear moisture-wicking socks and change them regularly",
+      "Use antifungal powder or spray in shoes",
+      "Avoid walking barefoot in public areas (pools, gyms, locker rooms)",
+      "Do not share nail clippers, files, or other nail tools",
+      "Wear well-ventilated shoes that allow airflow",
+      "Disinfect old shoes or replace them during treatment"
+    ],
+    "tips": "Over-the-counter antifungal nail lacquers can help mild cases. For severe infections, oral antifungal medications prescribed by a doctor are more effective.",
+    "emoji": "🟤"
+  }
+}
