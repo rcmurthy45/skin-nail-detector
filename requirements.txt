@@ -18,3 +18,4 @@ matplotlib==3.8.2
 # If you are on Apple Silicon (M1/M2):
 #   pip install tensorflow-macos tensorflow-metal
 # ─────────────────────────────────────────────────────────────────────────────
+gunicorn==21.2.0
