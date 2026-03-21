@@ -387,6 +387,16 @@ def get_translation(lang):
             return jsonify(json.load(f))
     except FileNotFoundError:
         return jsonify({"error": f"Translation file {lang}.json not found"}), 404
+    @app.errorhandler(500)
+def internal_error(error):
+    import traceback
+    return f"""
+    <h2>Debug Info (remove before final submission)</h2>
+    <pre>{traceback.format_exc()}</pre>
+    <p>TF_MODE: {TF_MODE}</p>
+    <p>Files present: {os.listdir('.')}</p>
+    <p>Templates: {os.listdir('templates') if os.path.exists('templates') else 'MISSING'}</p>
+    """, 500
 
 
 # ==============================================================================
