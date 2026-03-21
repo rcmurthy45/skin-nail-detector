@@ -30,17 +30,36 @@ except ImportError:
     TF_AVAILABLE = False
     print("tflite-runtime not available — running demo mode")
 
-# ── Load TFLite model ────────────────────────────────
-interpreter = None
-MODEL_PATH  = "model/skin_nail_model.tflite"
+# ── Model loading — works with OR without TensorFlow ──
+model      = None
+TF_MODE    = None   # "keras", "tflite", or "demo"
 
-if TF_AVAILABLE and os.path.exists(MODEL_PATH):
-    interpreter = tflite.Interpreter(model_path=MODEL_PATH)
-    interpreter.allocate_tensors()
-    print("✅ TFLite model loaded!")
-else:
-    print("⚠️  Model not found — running in demo mode")
+# Try TFLite first (lightest)
+try:
+    import tflite_runtime.interpreter as tflite
+    if os.path.exists("model/skin_nail_model.tflite"):
+        model = tflite.Interpreter(model_path="model/skin_nail_model.tflite")
+        model.allocate_tensors()
+        TF_MODE = "tflite"
+        print("✅ TFLite model loaded")
+except:
+    pass
 
+# Try full Keras next
+if model is None:
+    try:
+        from tensorflow.keras.models import load_model
+        if os.path.exists("model/skin_nail_model.h5"):
+            model = load_model("model/skin_nail_model.h5")
+            TF_MODE = "keras"
+            print("✅ Keras model loaded")
+    except:
+        pass
+
+# Fallback — demo mode
+if model is None:
+    TF_MODE = "demo"
+    print("⚠️  Running in DEMO mode — no model found")
 # ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "fallback_dev_key_2024") # Change in production!
