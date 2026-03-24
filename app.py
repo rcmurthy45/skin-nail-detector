@@ -1,6 +1,6 @@
 """
 app.py - SkinAI Flask Backend
-Safe version for Render free tier - no TensorFlow required
+No login required - users go directly to main page
 """
 
 import os
@@ -12,22 +12,21 @@ from datetime import datetime
 
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, session, jsonify
+    redirect, url_for, jsonify
 )
 from werkzeug.utils import secure_filename
 
-# ── numpy and Pillow (always available) ───────────────────────────────────────
 import numpy as np
 from PIL import Image as PILImage
 
 # ==============================================================================
-#  MODEL LOADING — tries 3 methods, never crashes
+#  MODEL LOADING
 # ==============================================================================
 
 model   = None
 TF_MODE = "demo"
 
-# Try 1: TFLite (best for Render)
+# Try TFLite first
 try:
     import tflite_runtime.interpreter as tflite
     _path = os.path.join("model", "skin_nail_model.tflite")
@@ -39,7 +38,7 @@ try:
 except Exception:
     pass
 
-# Try 2: Keras / TensorFlow (works locally)
+# Try Keras next
 if model is None:
     try:
         from tensorflow.keras.models import load_model as keras_load
@@ -51,7 +50,6 @@ if model is None:
     except Exception:
         pass
 
-# Try 3: Demo mode fallback
 if model is None:
     TF_MODE = "demo"
     print("INFO: No model found - running in demo mode")
@@ -69,7 +67,6 @@ app.secret_key = os.environ.get("SECRET_KEY", "skinai_secret_2024_local")
 
 UPLOAD_FOLDER      = os.path.join("static", "uploads")
 DISEASE_INFO_PATH  = "disease_info.json"
-USERS_DB_PATH      = "users.json"
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 IMG_SIZE           = 224
 CLASS_NAMES        = ["acne", "eczema", "nail_fungus", "psoriasis"]
@@ -80,7 +77,7 @@ os.makedirs("model", exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 # ==============================================================================
-#  DISEASE INFO — built-in fallback so app works even without disease_info.json
+#  DISEASE INFO
 # ==============================================================================
 
 BUILTIN_DISEASE_INFO = {
@@ -138,7 +135,6 @@ BUILTIN_DISEASE_INFO = {
     }
 }
 
-# Load from file if available, otherwise use built-in
 try:
     with open(DISEASE_INFO_PATH, "r", encoding="utf-8") as f:
         DISEASE_INFO = json.load(f)
@@ -154,27 +150,6 @@ except Exception:
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def load_users():
-    try:
-        if os.path.exists(USERS_DB_PATH):
-            with open(USERS_DB_PATH, "r") as f:
-                content = f.read().strip()
-                if content:
-                    return json.loads(content)
-    except Exception:
-        pass
-    return {}
-
-def save_users(users):
-    try:
-        with open(USERS_DB_PATH, "w") as f:
-            json.dump(users, f, indent=2)
-    except Exception as e:
-        print(f"Could not save users: {e}")
-
 def preprocess_image(img_path):
     img = PILImage.open(img_path).convert("RGB")
     img = img.resize((IMG_SIZE, IMG_SIZE))
@@ -183,15 +158,13 @@ def preprocess_image(img_path):
     return arr
 
 def run_prediction(filepath):
-    """Run prediction - auto selects best available method."""
-
     # Demo mode
     if TF_MODE == "demo" or model is None:
         return random.choice(CLASS_NAMES), round(random.uniform(72.0, 96.0), 1)
 
     arr = preprocess_image(filepath)
 
-    # TFLite prediction
+    # TFLite
     if TF_MODE == "tflite":
         inp = model.get_input_details()
         out = model.get_output_details()
@@ -202,7 +175,7 @@ def run_prediction(filepath):
         confidence = round(float(preds[idx]) * 100, 1)
         return CLASS_NAMES[idx], confidence
 
-    # Keras prediction
+    # Keras
     if TF_MODE == "keras":
         preds      = model.predict(arr)[0]
         idx        = int(np.argmax(preds))
@@ -212,96 +185,40 @@ def run_prediction(filepath):
     return random.choice(CLASS_NAMES), round(random.uniform(72.0, 96.0), 1)
 
 # ==============================================================================
-#  ROUTES — Auth
+#  ROUTES
 # ==============================================================================
 
 @app.route("/")
 def index():
-    if "username" in session:
-        return redirect(url_for("home"))
-    return redirect(url_for("login"))
+    """Go directly to main page — no login needed."""
+    return render_template("index.html")
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        try:
-            data     = request.get_json()
-            username = data.get("username", "").strip().lower()
-            password = data.get("password", "")
-            users    = load_users()
-            if username in users and users[username]["password"] == hash_password(password):
-                session["username"] = username
-                session["name"]     = users[username].get("name", username)
-                return jsonify({"success": True})
-            return jsonify({"success": False, "message": "Invalid username or password."})
-        except Exception as e:
-            return jsonify({"success": False, "message": str(e)})
-    return render_template("login.html")
-
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    if request.method == "POST":
-        try:
-            data     = request.get_json()
-            username = data.get("username", "").strip().lower()
-            password = data.get("password", "")
-            name     = data.get("name", "").strip()
-            if not username or not password or not name:
-                return jsonify({"success": False, "message": "All fields are required."})
-            if len(password) < 6:
-                return jsonify({"success": False, "message": "Password must be at least 6 characters."})
-            users = load_users()
-            if username in users:
-                return jsonify({"success": False, "message": "Username already taken."})
-            users[username] = {
-                "name":     name,
-                "password": hash_password(password),
-                "joined":   datetime.now().isoformat()
-            }
-            save_users(users)
-            session["username"] = username
-            session["name"]     = name
-            return jsonify({"success": True})
-        except Exception as e:
-            return jsonify({"success": False, "message": str(e)})
-    return render_template("signup.html")
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-# ==============================================================================
-#  ROUTES — Main App
-# ==============================================================================
-
-@app.route("/home")
-def home():
-    if "username" not in session:
-        return redirect(url_for("login"))
-    return render_template("index.html", username=session.get("name", "User"))
-
-# ==============================================================================
-#  ROUTES — Prediction API
-# ==============================================================================
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if "username" not in session:
-        return jsonify({"error": "Unauthorized. Please log in."}), 401
+    """
+    POST /predict
+    Accepts image file, returns prediction JSON.
+    No authentication required.
+    """
     if "file" not in request.files:
         return jsonify({"error": "No image file received."}), 400
+
     file = request.files["file"]
+
     if file.filename == "":
         return jsonify({"error": "No file selected."}), 400
+
     if not allowed_file(file.filename):
         return jsonify({"error": "Use JPG, PNG, or WEBP images only."}), 400
 
+    # Save uploaded image
     ext      = file.filename.rsplit(".", 1)[1].lower()
     filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
+    # Run prediction
     try:
         predicted_class, confidence = run_prediction(filepath)
     except Exception as e:
@@ -319,12 +236,10 @@ def predict():
         "mode":        TF_MODE
     })
 
-# ==============================================================================
-#  ROUTES — Translations
-# ==============================================================================
 
 @app.route("/translations/<lang>")
 def get_translation(lang):
+    """Serve translation JSON files."""
     if lang not in ["en", "hi", "te"]:
         lang = "en"
     path = os.path.join("translations", f"{lang}.json")
@@ -332,25 +247,18 @@ def get_translation(lang):
         with open(path, "r", encoding="utf-8") as f:
             return jsonify(json.load(f))
     except Exception:
-        return jsonify({}), 200   # return empty object instead of 404
+        return jsonify({}), 200
 
-# ==============================================================================
-#  ERROR HANDLERS — show helpful debug info instead of blank page
-# ==============================================================================
 
 @app.errorhandler(404)
 def not_found(e):
-    return jsonify({"error": "Page not found", "url": request.url}), 404
+    return jsonify({"error": "Page not found"}), 404
 
 @app.errorhandler(500)
 def server_error(e):
     import traceback
-    tb = traceback.format_exc()
-    print("500 ERROR:\n", tb)
-    # In production hide traceback — show generic message
-    if app.debug:
-        return f"<pre>500 Error:\n{tb}</pre>", 500
-    return "Internal server error. Check Render logs for details.", 500
+    print("500 ERROR:\n", traceback.format_exc())
+    return "Internal server error. Check Render logs.", 500
 
 # ==============================================================================
 #  START SERVER
@@ -361,5 +269,6 @@ if __name__ == "__main__":
     print("  SkinAI - Skin & Nail Disease Detector")
     print(f"  Model mode : {TF_MODE.upper()}")
     print("  URL        : http://127.0.0.1:5000")
+    print("  No login required!")
     print("="*50 + "\n")
     app.run(debug=True, host="0.0.0.0", port=5000)
